@@ -1,0 +1,27 @@
+services:
+  postgres:
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
+        ]
+
+  langfuse-worker:
+    user: "${AWS_CONTAINER_UID:-1000}:${AWS_CONTAINER_GID:-1000}"
+    volumes:
+      - ${AWS_HOST_DIR}:/home/expressjs/.aws:ro
+    environment:
+      HOME: /home/expressjs
+      AWS_SDK_LOAD_CONFIG: "1"
+      LANGFUSE_LOG_LEVEL: ${LANGFUSE_LOG_LEVEL:-info}
+
+  langfuse-web:
+    user: "${AWS_CONTAINER_UID:-1000}:${AWS_CONTAINER_GID:-1000}"
+    volumes:
+      - ${AWS_HOST_DIR}:/home/nextjs/.aws:ro
+    environment:
+      HOME: /home/nextjs
+      AWS_SDK_LOAD_CONFIG: "1"
+      LANGFUSE_LOG_LEVEL: ${LANGFUSE_LOG_LEVEL:-info}
+      AUTH_DISABLE_SIGNUP: ${AUTH_DISABLE_SIGNUP:-true}
