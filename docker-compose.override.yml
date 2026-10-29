@@ -6,6 +6,7 @@ services:
           "CMD-SHELL",
           "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
         ]
+    ports: !reset []
 
   langfuse-worker:
     user: "${AWS_CONTAINER_UID:-1000}:${AWS_CONTAINER_GID:-1000}"
@@ -15,6 +16,9 @@ services:
       HOME: /home/expressjs
       AWS_SDK_LOAD_CONFIG: "1"
       LANGFUSE_LOG_LEVEL: ${LANGFUSE_LOG_LEVEL:-info}
+      NEXTAUTH_URL: https://${LANGFUSE_DOMAIN:-localhost}:4443
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: https://${LANGFUSE_DOMAIN:-localhost}:9443
+    ports: !reset []
 
   langfuse-web:
     user: "${AWS_CONTAINER_UID:-1000}:${AWS_CONTAINER_GID:-1000}"
@@ -25,3 +29,60 @@ services:
       AWS_SDK_LOAD_CONFIG: "1"
       LANGFUSE_LOG_LEVEL: ${LANGFUSE_LOG_LEVEL:-info}
       AUTH_DISABLE_SIGNUP: ${AUTH_DISABLE_SIGNUP:-true}
+      NEXTAUTH_URL: https://${LANGFUSE_DOMAIN:-localhost}:4443
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: https://${LANGFUSE_DOMAIN:-localhost}:9443
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: https://${LANGFUSE_DOMAIN:-localhost}:9443
+    ports: !reset []
+
+  minio:
+    ports: !reset []
+
+  clickhouse:
+    ports: !reset []
+
+  caddy:
+    image: docker.io/caddy:2
+    restart: always
+    depends_on:
+      - langfuse-web
+      - minio
+    ports:
+      - 4443:4443
+      - 9443:9443
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+  redis:
+    ports: !reset []
+
+
+# Private network: certs come from Caddy's own local CA (no Let's Encrypt).
+# Clients must trust /data/caddy/pki/authorities/local/root.crt once.
+configs:
+  caddyfile:
+    content: |
+      {
+        http_port 8080
+        https_port 4443
+        servers {
+          protocols h1 h2
+        }
+      }
+
+      ${LANGFUSE_DOMAIN:-localhost} {
+        tls internal
+        reverse_proxy langfuse-web:3000
+      }
+
+      ${LANGFUSE_DOMAIN:-localhost}:9443 {
+        tls internal
+        reverse_proxy minio:9000
+      }
+
+volumes:
+  caddy_data:
+  caddy_config:
